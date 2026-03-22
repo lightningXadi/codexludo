@@ -55,7 +55,7 @@ const CLR = {
 };
 
 let mySocketId=null, myRoomCode=null, myPlayerId=null, gameState=null, selectedCount=3, animating=false;
-let canvas, ctx, svgEl;
+let boardGridEl, svgEl;
 const tokenEls={}, tokenPos={};
 
 const $  = id => document.getElementById(id);
@@ -181,18 +181,18 @@ socket.on('error',({message})=>toast(message));
 function launchGame(gs) {
   showScreen('screen-game');
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    initCanvas();
-    drawBoard();
+    initBoard();
     initSVGTokens(gs);
     placeTokensStatic(gs);
     renderHUD(gs);
   }));
 }
 
-/* ── Canvas init ─────────────────────────────────────────── */
-function initCanvas() {
+/* ── Board grid init ─────────────────────────────────────── */
+function initBoard() {
   const shell=document.getElementById('board-shell');
-  canvas=$('game-canvas'); svgEl=$('token-svg');
+  const stage=$('board-stage');
+  boardGridEl=$('board-grid'); svgEl=$('token-svg');
 
   const body=document.querySelector('.game-body');
   const br=body.getBoundingClientRect();
@@ -202,24 +202,24 @@ function initCanvas() {
   const size=Math.floor(Math.min(availW,availH,560,Math.max(availW,260)));
 
   shell.style.width=size+'px'; shell.style.height=size+'px';
-  canvas.width=CANVAS_SIZE; canvas.height=CANVAS_SIZE;
-  canvas.style.width=size+'px'; canvas.style.height=size+'px';
+  stage.style.width=size+'px'; stage.style.height=size+'px';
   svgEl.setAttribute('viewBox','0 0 '+CANVAS_SIZE+' '+CANVAS_SIZE);
   svgEl.style.width=size+'px'; svgEl.style.height=size+'px';
-  ctx=canvas.getContext('2d');
+  buildBoardGrid();
   svgEl.style.pointerEvents='all';
   svgEl.removeEventListener('click',onSVGClick);
   svgEl.addEventListener('click',onSVGClick);
   window.removeEventListener('resize',onResize);
   window.addEventListener('resize',onResize);
-  console.log('[Canvas] shell='+size+'px  CELL='+CELL);
+  console.log('[Board] shell='+size+'px  CELL='+CELL);
 }
 
 function onResize() {
-  if(!canvas||!$('screen-game').classList.contains('active'))return;
-  initCanvas(); drawBoard();
+  if(!$('board-stage')||!$('screen-game').classList.contains('active'))return;
+  initBoard();
   if(gameState){placeTokensStatic(gameState);renderHUD(gameState);}
 }
+
 
 /* ── Board drawing ───────────────────────────────────────── */
 function drawBoard() {
@@ -299,8 +299,10 @@ function drawSafe(){
     const [c,r]=PATH52[i]; const x=c*CELL+CELL/2,y=r*CELL+CELL/2;
     ctx.save(); ctx.fillStyle='rgba(251,191,36,0.2)'; ctx.strokeStyle='rgba(251,191,36,0.5)'; ctx.lineWidth=1;
     starPath(x,y,CELL*0.27,CELL*0.12,6); ctx.fill(); ctx.stroke(); ctx.restore();
+
   });
-}
+
+
 
 function drawCenter(){
   const cx=CANVAS_SIZE/2,cy=CANVAS_SIZE/2,arm=CELL*2.4;
@@ -319,29 +321,28 @@ function drawCenter(){
   ctx.save(); ctx.fillStyle='rgba(255,255,255,0.92)'; ctx.shadowColor='#fff'; ctx.shadowBlur=12;
   starPath(cx,cy,CELL*0.5,CELL*0.2,6); ctx.fill(); ctx.restore();
 }
+ 
 
-function drawArrows(){
-  [{idx:0,color:'red',angle:0},{idx:13,color:'blue',angle:Math.PI/2},
-   {idx:26,color:'green',angle:Math.PI},{idx:39,color:'yellow',angle:-Math.PI/2}]
-  .forEach(({idx,color,angle})=>{
-    const [c,r]=PATH52[idx]; const x=c*CELL+CELL/2,y=r*CELL+CELL/2,s=CELL*0.16;
-    ctx.save(); ctx.translate(x,y); ctx.rotate(angle); ctx.fillStyle=CLR[color].fill+'cc';
-    ctx.beginPath(); ctx.moveTo(s,0); ctx.lineTo(-s,-s*0.65); ctx.lineTo(-s,s*0.65); ctx.closePath(); ctx.fill(); ctx.restore();
+  [
+    {color:'red',col:1,row:1},
+    {color:'blue',col:10,row:1},
+    {color:'green',col:10,row:10},
+    {color:'yellow',col:1,row:10},
+  ].forEach(({color,col,row})=>{
+    const home=document.createElement('div');
+    home.className=`board-feature home-zone ${color}`;
+    home.style.gridColumn=`${col} / span 5`;
+    home.style.gridRow=`${row} / span 5`;
+    home.innerHTML=`
+      <div class="home-zone__inner">
+        <span class="home-zone__slot"></span>
+        <span class="home-zone__slot"></span>
+        <span class="home-zone__slot"></span>
+        <span class="home-zone__slot"></span>
+      </div>
+    `;
+    boardGridEl.appendChild(home);
   });
-}
-
-function rr(x,y,w,h,r){
-  ctx.beginPath(); ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
-  ctx.quadraticCurveTo(x+w,y,x+w,y+r); ctx.lineTo(x+w,y+h-r);
-  ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h); ctx.lineTo(x+r,y+h);
-  ctx.quadraticCurveTo(x,y+h,x,y+h-r); ctx.lineTo(x,y+r);
-  ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
-}
-function starPath(cx,cy,or,ir,n){
-  ctx.beginPath();
-  for(let i=0;i<n*2;i++){const r=i%2===0?or:ir,a=(i*Math.PI/n)-Math.PI/2;
-    i===0?ctx.moveTo(cx+r*Math.cos(a),cy+r*Math.sin(a)):ctx.lineTo(cx+r*Math.cos(a),cy+r*Math.sin(a));}
-  ctx.closePath();
 }
 
 /* ── SVG Tokens ──────────────────────────────────────────── */
@@ -353,6 +354,8 @@ function initSVGTokens(gs){
   const defs=document.createElementNS(NS,'defs');
   defs.innerHTML=`
     <radialGradient id="grad-red" cx="35%" cy="30%">
+
+
       <stop offset="0%" stop-color="#ffd2da"/>
       <stop offset="38%" stop-color="#ff6b89"/>
       <stop offset="100%" stop-color="#c81e4b"/>
@@ -401,9 +404,10 @@ function makeToken(color,idx){
   sh.setAttribute('r',r+3); sh.setAttribute('fill','rgba(3,6,15,0.42)'); sh.setAttribute('transform','translate(2,4)');
   sh.setAttribute('filter','url(#tk-shadow)');
   const pulse=document.createElementNS(NS,'circle');
-  pulse.setAttribute('class','pulse'); pulse.setAttribute('r',r+5);
+  pulse.setAttribute('class','pulse'); pulse.setAttribute('r',r+4);
   pulse.setAttribute('fill','none'); pulse.setAttribute('stroke',fill);
   pulse.setAttribute('stroke-width','2'); pulse.setAttribute('opacity','0');
+
   pulse.innerHTML='<animate attributeName="r" values="'+(r+4)+';'+(r+10)+';'+(r+4)+'" dur="1.2s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.7;0;0.7" dur="1.2s" repeatCount="indefinite"/>';
   const rim=document.createElementNS(NS,'circle');
   rim.setAttribute('class','rim');
@@ -412,6 +416,7 @@ function makeToken(color,idx){
   rim.setAttribute('stroke','rgba(255,255,255,0.55)');
   rim.setAttribute('stroke-width','1.4');
   rim.setAttribute('opacity','0.45');
+ 
   const body=document.createElementNS(NS,'circle');
   body.setAttribute('class','body');
   body.setAttribute('r',r);
