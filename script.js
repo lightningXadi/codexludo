@@ -196,8 +196,9 @@ function initCanvas() {
 
   const body=document.querySelector('.game-body');
   const br=body.getBoundingClientRect();
-  const availW=br.width-210-18-28;
-  const availH=br.height-28;
+  const panelWidth=window.innerWidth<=820?0:260;
+  const availW=br.width-panelWidth-24-40;
+  const availH=br.height-40;
   const size=Math.floor(Math.min(availW,availH,560,Math.max(availW,260)));
 
   shell.style.width=size+'px'; shell.style.height=size+'px';
@@ -224,8 +225,16 @@ function onResize() {
 function drawBoard() {
   if(!ctx)return;
   const S=CANVAS_SIZE;
-  ctx.fillStyle='#0d0f1a'; ctx.fillRect(0,0,S,S);
-  ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.lineWidth=0.5;
+  const bg=ctx.createLinearGradient(0,0,S,S);
+  bg.addColorStop(0,'#10172f');
+  bg.addColorStop(0.5,'#0d1630');
+  bg.addColorStop(1,'#0b1225');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,S,S);
+  const glow=ctx.createRadialGradient(S/2,S/2,S*0.06,S/2,S/2,S*0.6);
+  glow.addColorStop(0,'rgba(255,255,255,0.08)');
+  glow.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=glow; ctx.fillRect(0,0,S,S);
+  ctx.strokeStyle='rgba(255,255,255,0.045)'; ctx.lineWidth=0.75;
   for(let i=0;i<=GRID;i++){
     ctx.beginPath();ctx.moveTo(i*CELL,0);ctx.lineTo(i*CELL,S);ctx.stroke();
     ctx.beginPath();ctx.moveTo(0,i*CELL);ctx.lineTo(S,i*CELL);ctx.stroke();
@@ -236,10 +245,21 @@ function drawBoard() {
 function drawZones(){
   [{col:0,row:0,color:'red'},{col:9,row:0,color:'blue'},{col:9,row:9,color:'green'},{col:0,row:9,color:'yellow'}]
   .forEach(({col,row,color})=>{
-    const c=CLR[color],x=col*CELL,y=row*CELL,w=6*CELL,p=CELL*0.6;
-    ctx.fillStyle=c.zone; rr(x,y,w,w,CELL*0.35); ctx.fill();
-    ctx.fillStyle='rgba(8,10,22,0.78)'; rr(x+p,y+p,w-p*2,w-p*2,CELL*0.22); ctx.fill();
-    ctx.strokeStyle=c.fill+'55'; ctx.lineWidth=1.5; rr(x+p,y+p,w-p*2,w-p*2,CELL*0.22); ctx.stroke();
+    const c=CLR[color],x=col*CELL,y=row*CELL,w=6*CELL,p=CELL*0.64;
+    const zoneGrad=ctx.createLinearGradient(x,y,x+w,y+w);
+    zoneGrad.addColorStop(0,c.fill+'ee');
+    zoneGrad.addColorStop(1,c.fill+'90');
+    ctx.save();
+    ctx.shadowColor=c.glow; ctx.shadowBlur=28;
+    ctx.fillStyle=zoneGrad; rr(x,y,w,w,CELL*0.42); ctx.fill();
+    ctx.restore();
+    const innerGrad=ctx.createLinearGradient(x+p,y+p,x+w-p,y+w-p);
+    innerGrad.addColorStop(0,'rgba(9,14,28,0.9)');
+    innerGrad.addColorStop(1,'rgba(20,28,48,0.82)');
+    ctx.fillStyle=innerGrad; rr(x+p,y+p,w-p*2,w-p*2,CELL*0.28); ctx.fill();
+    ctx.strokeStyle=c.fill+'77'; ctx.lineWidth=1.8; rr(x+p,y+p,w-p*2,w-p*2,CELL*0.28); ctx.stroke();
+    ctx.strokeStyle='rgba(255,255,255,0.08)'; ctx.lineWidth=1;
+    rr(x+6,y+6,w-12,w-12,CELL*0.4); ctx.stroke();
     ctx.save(); ctx.globalAlpha=0.08; ctx.fillStyle='#fff';
     ctx.font='900 '+(CELL*0.7)+'px Orbitron,monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(color.toUpperCase(),x+w/2,y+w/2); ctx.restore();
@@ -248,9 +268,14 @@ function drawZones(){
 
 function drawPathCells(){
   PATH52.forEach(([c,r])=>{
-    const x=c*CELL+1,y=r*CELL+1,w=CELL-2;
-    ctx.fillStyle='rgba(255,255,255,0.05)'; rr(x,y,w,w,3); ctx.fill();
-    ctx.strokeStyle='rgba(255,255,255,0.09)'; ctx.lineWidth=0.5; rr(x,y,w,w,3); ctx.stroke();
+    const x=c*CELL+1.5,y=r*CELL+1.5,w=CELL-3;
+    const cellGrad=ctx.createLinearGradient(x,y,x+w,y+w);
+    cellGrad.addColorStop(0,'rgba(255,255,255,0.14)');
+    cellGrad.addColorStop(1,'rgba(133,151,210,0.05)');
+    ctx.fillStyle=cellGrad; rr(x,y,w,w,7); ctx.fill();
+    ctx.strokeStyle='rgba(186,207,255,0.22)'; ctx.lineWidth=1.35; rr(x,y,w,w,7); ctx.stroke();
+    ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1;
+    rr(x+4,y+4,w-8,w-8,5); ctx.stroke();
   });
 }
 
@@ -258,9 +283,13 @@ function drawLaneCells(){
   Object.entries(HOME_LANES).forEach(([color,cells])=>{
     const c=CLR[color];
     cells.forEach(([col,row])=>{
-      const x=col*CELL+1,y=row*CELL+1,w=CELL-2;
-      ctx.fillStyle=c.lane; rr(x,y,w,w,3); ctx.fill();
-      ctx.strokeStyle=c.fill+'45'; ctx.lineWidth=0.5; rr(x,y,w,w,3); ctx.stroke();
+      const x=col*CELL+1.5,y=row*CELL+1.5,w=CELL-3;
+      const h=w;
+      const laneGrad=ctx.createLinearGradient(x,y,x+w,y+h);
+      laneGrad.addColorStop(0,c.fill+'55');
+      laneGrad.addColorStop(1,c.fill+'25');
+      ctx.fillStyle=laneGrad; rr(x,y,w,h,7); ctx.fill();
+      ctx.strokeStyle=c.fill+'88'; ctx.lineWidth=1.25; rr(x,y,w,h,7); ctx.stroke();
     });
   });
 }
@@ -281,7 +310,11 @@ function drawCenter(){
    {color:'yellow',pts:[[cx,cy],[cx-arm,cy+arm],[cx-arm,cy-arm]]}]
   .forEach(t=>{
     ctx.beginPath(); ctx.moveTo(...t.pts[0]); ctx.lineTo(...t.pts[1]); ctx.lineTo(...t.pts[2]); ctx.closePath();
-    ctx.fillStyle=CLR[t.color].fill+'bb'; ctx.fill();
+    const tri=ctx.createLinearGradient(cx,cy,t.pts[1][0],t.pts[1][1]);
+    tri.addColorStop(0,CLR[t.color].fill+'f0');
+    tri.addColorStop(1,CLR[t.color].fill+'90');
+    ctx.fillStyle=tri; ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.12)'; ctx.lineWidth=1.2; ctx.stroke();
   });
   ctx.save(); ctx.fillStyle='rgba(255,255,255,0.92)'; ctx.shadowColor='#fff'; ctx.shadowBlur=12;
   starPath(cx,cy,CELL*0.5,CELL*0.2,6); ctx.fill(); ctx.restore();
@@ -318,7 +351,36 @@ const TOKEN_R=CELL*0.3;
 function initSVGTokens(gs){
   svgEl.innerHTML='';
   const defs=document.createElementNS(NS,'defs');
-  defs.innerHTML='<filter id="tk-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
+  defs.innerHTML=`
+    <radialGradient id="grad-red" cx="35%" cy="30%">
+      <stop offset="0%" stop-color="#ffd2da"/>
+      <stop offset="38%" stop-color="#ff6b89"/>
+      <stop offset="100%" stop-color="#c81e4b"/>
+    </radialGradient>
+    <radialGradient id="grad-blue" cx="35%" cy="30%">
+      <stop offset="0%" stop-color="#dbeafe"/>
+      <stop offset="38%" stop-color="#5ca8ff"/>
+      <stop offset="100%" stop-color="#2156d8"/>
+    </radialGradient>
+    <radialGradient id="grad-green" cx="35%" cy="30%">
+      <stop offset="0%" stop-color="#d7ffef"/>
+      <stop offset="38%" stop-color="#32d5a1"/>
+      <stop offset="100%" stop-color="#0b8a62"/>
+    </radialGradient>
+    <radialGradient id="grad-yellow" cx="35%" cy="30%">
+      <stop offset="0%" stop-color="#fff2bf"/>
+      <stop offset="38%" stop-color="#ffc94d"/>
+      <stop offset="100%" stop-color="#d58b00"/>
+    </radialGradient>
+    <filter id="tk-glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="4.4" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.9 0" result="glow"/>
+      <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="tk-shadow" x="-80%" y="-80%" width="260%" height="260%">
+      <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="rgba(0,0,0,0.45)"/>
+    </filter>
+  `;
   svgEl.appendChild(defs);
   gs.players.forEach(p=>{
     tokenEls[p.color]=[]; tokenPos[p.color]=[];
@@ -336,24 +398,39 @@ function makeToken(color,idx){
   g.setAttribute('class','token-group'); g.dataset.color=color; g.dataset.idx=idx;
   const r=TOKEN_R, fill=CLR[color].fill;
   const sh=document.createElementNS(NS,'circle');
-  sh.setAttribute('r',r+2); sh.setAttribute('fill','rgba(0,0,0,0.4)'); sh.setAttribute('transform','translate(2,3)');
+  sh.setAttribute('r',r+3); sh.setAttribute('fill','rgba(3,6,15,0.42)'); sh.setAttribute('transform','translate(2,4)');
+  sh.setAttribute('filter','url(#tk-shadow)');
   const pulse=document.createElementNS(NS,'circle');
   pulse.setAttribute('class','pulse'); pulse.setAttribute('r',r+5);
   pulse.setAttribute('fill','none'); pulse.setAttribute('stroke',fill);
   pulse.setAttribute('stroke-width','2'); pulse.setAttribute('opacity','0');
   pulse.innerHTML='<animate attributeName="r" values="'+(r+4)+';'+(r+10)+';'+(r+4)+'" dur="1.2s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.7;0;0.7" dur="1.2s" repeatCount="indefinite"/>';
+  const rim=document.createElementNS(NS,'circle');
+  rim.setAttribute('class','rim');
+  rim.setAttribute('r',r+1.3);
+  rim.setAttribute('fill','none');
+  rim.setAttribute('stroke','rgba(255,255,255,0.55)');
+  rim.setAttribute('stroke-width','1.4');
+  rim.setAttribute('opacity','0.45');
   const body=document.createElementNS(NS,'circle');
-  body.setAttribute('class','body'); body.setAttribute('r',r); body.setAttribute('fill',fill);
+  body.setAttribute('class','body');
+  body.setAttribute('r',r);
+  body.setAttribute('fill','url(#grad-'+color+')');
   const hl=document.createElementNS(NS,'ellipse');
   hl.setAttribute('rx',r*0.38); hl.setAttribute('ry',r*0.2);
   hl.setAttribute('cx',-r*0.2); hl.setAttribute('cy',-r*0.27);
-  hl.setAttribute('fill','rgba(255,255,255,0.28)');
+  hl.setAttribute('class','spec');
+  hl.setAttribute('fill','rgba(255,255,255,0.34)');
+  const core=document.createElementNS(NS,'circle');
+  core.setAttribute('r',r*0.68);
+  core.setAttribute('fill','rgba(255,255,255,0.08)');
   const txt=document.createElementNS(NS,'text');
   txt.setAttribute('text-anchor','middle'); txt.setAttribute('dominant-baseline','central');
   txt.setAttribute('fill','#fff'); txt.setAttribute('font-size',r*0.85);
   txt.setAttribute('font-family','Outfit,sans-serif'); txt.setAttribute('font-weight','700');
+  txt.setAttribute('style','paint-order:stroke;stroke:rgba(0,0,0,0.2);stroke-width:1px');
   txt.setAttribute('pointer-events','none'); txt.textContent=idx+1;
-  g.append(sh,pulse,body,hl,txt);
+  g.append(sh,pulse,rim,body,core,hl,txt);
   return g;
 }
 
@@ -473,6 +550,7 @@ function renderHUD(gs){
     $('tc-orb').style.background=CLR[cp.color].fill;
     $('tc-orb').style.boxShadow='0 0 18px '+CLR[cp.color].glow;
     $('tc-badge').classList.toggle('show',cp.id===myPlayerId);
+    $('turn-card').classList.toggle('active-turn',cp.id===myPlayerId);
   }
   // Disable roll button during: not my turn, not roll phase, animating, or animating phase from server
   const canRoll = gs.currentPlayer===myPlayerId
