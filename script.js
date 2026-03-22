@@ -220,47 +220,108 @@ function onResize() {
   if(gameState){placeTokensStatic(gameState);renderHUD(gameState);}
 }
 
-function buildBoardGrid(){
-  if(!boardGridEl) return;
-  boardGridEl.innerHTML='';
 
-  const pathColorMap = new Map([[0,'red'],[13,'blue'],[26,'green'],[39,'yellow']]);
-  const coordToPathIndex = new Map(PATH52.map(([c,r],i)=>[`${c},${r}`,i]));
-  const coordToLaneColor = new Map();
+/* ── Board drawing ───────────────────────────────────────── */
+function drawBoard() {
+  if(!ctx)return;
+  const S=CANVAS_SIZE;
+  const bg=ctx.createLinearGradient(0,0,S,S);
+  bg.addColorStop(0,'#10172f');
+  bg.addColorStop(0.5,'#0d1630');
+  bg.addColorStop(1,'#0b1225');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,S,S);
+  const glow=ctx.createRadialGradient(S/2,S/2,S*0.06,S/2,S/2,S*0.6);
+  glow.addColorStop(0,'rgba(255,255,255,0.08)');
+  glow.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=glow; ctx.fillRect(0,0,S,S);
+  ctx.strokeStyle='rgba(255,255,255,0.045)'; ctx.lineWidth=0.75;
+  for(let i=0;i<=GRID;i++){
+    ctx.beginPath();ctx.moveTo(i*CELL,0);ctx.lineTo(i*CELL,S);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(0,i*CELL);ctx.lineTo(S,i*CELL);ctx.stroke();
+  }
+  drawZones(); drawPathCells(); drawLaneCells(); drawSafe(); drawCenter(); drawArrows();
+}
+
+function drawZones(){
+  [{col:0,row:0,color:'red'},{col:9,row:0,color:'blue'},{col:9,row:9,color:'green'},{col:0,row:9,color:'yellow'}]
+  .forEach(({col,row,color})=>{
+    const c=CLR[color],x=col*CELL,y=row*CELL,w=6*CELL,p=CELL*0.64;
+    const zoneGrad=ctx.createLinearGradient(x,y,x+w,y+w);
+    zoneGrad.addColorStop(0,c.fill+'ee');
+    zoneGrad.addColorStop(1,c.fill+'90');
+    ctx.save();
+    ctx.shadowColor=c.glow; ctx.shadowBlur=28;
+    ctx.fillStyle=zoneGrad; rr(x,y,w,w,CELL*0.42); ctx.fill();
+    ctx.restore();
+    const innerGrad=ctx.createLinearGradient(x+p,y+p,x+w-p,y+w-p);
+    innerGrad.addColorStop(0,'rgba(9,14,28,0.9)');
+    innerGrad.addColorStop(1,'rgba(20,28,48,0.82)');
+    ctx.fillStyle=innerGrad; rr(x+p,y+p,w-p*2,w-p*2,CELL*0.28); ctx.fill();
+    ctx.strokeStyle=c.fill+'77'; ctx.lineWidth=1.8; rr(x+p,y+p,w-p*2,w-p*2,CELL*0.28); ctx.stroke();
+    ctx.strokeStyle='rgba(255,255,255,0.08)'; ctx.lineWidth=1;
+    rr(x+6,y+6,w-12,w-12,CELL*0.4); ctx.stroke();
+    ctx.save(); ctx.globalAlpha=0.08; ctx.fillStyle='#fff';
+    ctx.font='900 '+(CELL*0.7)+'px Orbitron,monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(color.toUpperCase(),x+w/2,y+w/2); ctx.restore();
+  });
+}
+
+function drawPathCells(){
+  PATH52.forEach(([c,r])=>{
+    const x=c*CELL+1.5,y=r*CELL+1.5,w=CELL-3;
+    const cellGrad=ctx.createLinearGradient(x,y,x+w,y+w);
+    cellGrad.addColorStop(0,'rgba(255,255,255,0.14)');
+    cellGrad.addColorStop(1,'rgba(133,151,210,0.05)');
+    ctx.fillStyle=cellGrad; rr(x,y,w,w,7); ctx.fill();
+    ctx.strokeStyle='rgba(186,207,255,0.22)'; ctx.lineWidth=1.35; rr(x,y,w,w,7); ctx.stroke();
+    ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1;
+    rr(x+4,y+4,w-8,w-8,5); ctx.stroke();
+  });
+}
+
+function drawLaneCells(){
   Object.entries(HOME_LANES).forEach(([color,cells])=>{
-    cells.forEach(([c,r])=>coordToLaneColor.set(`${c},${r}`,color));
+    const c=CLR[color];
+    cells.forEach(([col,row])=>{
+      const x=col*CELL+1.5,y=row*CELL+1.5,w=CELL-3;
+      const h=w;
+      const laneGrad=ctx.createLinearGradient(x,y,x+w,y+h);
+      laneGrad.addColorStop(0,c.fill+'55');
+      laneGrad.addColorStop(1,c.fill+'25');
+      ctx.fillStyle=laneGrad; rr(x,y,w,h,7); ctx.fill();
+      ctx.strokeStyle=c.fill+'88'; ctx.lineWidth=1.25; rr(x,y,w,h,7); ctx.stroke();
+    });
+  });
+}
+
+function drawSafe(){
+  SAFE_SET.forEach(i=>{
+    const [c,r]=PATH52[i]; const x=c*CELL+CELL/2,y=r*CELL+CELL/2;
+    ctx.save(); ctx.fillStyle='rgba(251,191,36,0.2)'; ctx.strokeStyle='rgba(251,191,36,0.5)'; ctx.lineWidth=1;
+    starPath(x,y,CELL*0.27,CELL*0.12,6); ctx.fill(); ctx.stroke(); ctx.restore();
+
   });
 
-  for(let row=0; row<GRID; row++){
-    for(let col=0; col<GRID; col++){
-      const cell=document.createElement('div');
-      cell.className='board-cell';
-      cell.style.gridColumn=String(col+1);
-      cell.style.gridRow=String(row+1);
 
-      const key=`${col},${row}`;
-      const pathIdx=coordToPathIndex.get(key);
-      const laneColor=coordToLaneColor.get(key);
 
-      if(pathIdx!==undefined){
-        cell.classList.add('is-path');
-        const pathColor=pathColorMap.get(pathIdx);
-        if(pathColor) cell.classList.add('path-'+pathColor);
-        if(SAFE_SET.has(pathIdx)) cell.classList.add('is-safe');
-      }
-      if(laneColor) cell.classList.add('lane-'+laneColor, 'is-path');
-
-      if(row===7 && col===7){
-        cell.classList.add('center-core');
-      }
-      if((row===6 && col===7) || (row===7 && col===8) || (row===8 && col===7) || (row===7 && col===6)){
-        const centerColor = row===6 ? 'red' : row===7 && col===8 ? 'blue' : row===8 ? 'green' : 'yellow';
-        cell.classList.add('lane-'+centerColor, 'is-path');
-      }
-
-      boardGridEl.appendChild(cell);
-    }
-  }
+function drawCenter(){
+  const cx=CANVAS_SIZE/2,cy=CANVAS_SIZE/2,arm=CELL*2.4;
+  [{color:'red',pts:[[cx,cy],[cx-arm,cy-arm],[cx+arm,cy-arm]]},
+   {color:'blue',pts:[[cx,cy],[cx+arm,cy-arm],[cx+arm,cy+arm]]},
+   {color:'green',pts:[[cx,cy],[cx+arm,cy+arm],[cx-arm,cy+arm]]},
+   {color:'yellow',pts:[[cx,cy],[cx-arm,cy+arm],[cx-arm,cy-arm]]}]
+  .forEach(t=>{
+    ctx.beginPath(); ctx.moveTo(...t.pts[0]); ctx.lineTo(...t.pts[1]); ctx.lineTo(...t.pts[2]); ctx.closePath();
+    const tri=ctx.createLinearGradient(cx,cy,t.pts[1][0],t.pts[1][1]);
+    tri.addColorStop(0,CLR[t.color].fill+'f0');
+    tri.addColorStop(1,CLR[t.color].fill+'90');
+    ctx.fillStyle=tri; ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.12)'; ctx.lineWidth=1.2; ctx.stroke();
+  });
+  ctx.save(); ctx.fillStyle='rgba(255,255,255,0.92)'; ctx.shadowColor='#fff'; ctx.shadowBlur=12;
+  starPath(cx,cy,CELL*0.5,CELL*0.2,6); ctx.fill(); ctx.restore();
+}
+ 
 
   [
     {color:'red',col:1,row:1},
@@ -293,31 +354,34 @@ function initSVGTokens(gs){
   const defs=document.createElementNS(NS,'defs');
   defs.innerHTML=`
     <radialGradient id="grad-red" cx="35%" cy="30%">
-      <stop offset="0%" stop-color="#fff4f6"/>
-      <stop offset="38%" stop-color="#ef9aa8"/>
-      <stop offset="100%" stop-color="#d65d73"/>
+
+
+      <stop offset="0%" stop-color="#ffd2da"/>
+      <stop offset="38%" stop-color="#ff6b89"/>
+      <stop offset="100%" stop-color="#c81e4b"/>
     </radialGradient>
     <radialGradient id="grad-blue" cx="35%" cy="30%">
-      <stop offset="0%" stop-color="#f3f7ff"/>
-      <stop offset="38%" stop-color="#97b6eb"/>
-      <stop offset="100%" stop-color="#5f86ce"/>
+      <stop offset="0%" stop-color="#dbeafe"/>
+      <stop offset="38%" stop-color="#5ca8ff"/>
+      <stop offset="100%" stop-color="#2156d8"/>
     </radialGradient>
     <radialGradient id="grad-green" cx="35%" cy="30%">
-      <stop offset="0%" stop-color="#f2fbf6"/>
-      <stop offset="38%" stop-color="#8cc9ac"/>
-      <stop offset="100%" stop-color="#4aa076"/>
+      <stop offset="0%" stop-color="#d7ffef"/>
+      <stop offset="38%" stop-color="#32d5a1"/>
+      <stop offset="100%" stop-color="#0b8a62"/>
     </radialGradient>
     <radialGradient id="grad-yellow" cx="35%" cy="30%">
-      <stop offset="0%" stop-color="#fffdf1"/>
-      <stop offset="38%" stop-color="#ead894"/>
-      <stop offset="100%" stop-color="#d2b44e"/>
+      <stop offset="0%" stop-color="#fff2bf"/>
+      <stop offset="38%" stop-color="#ffc94d"/>
+      <stop offset="100%" stop-color="#d58b00"/>
     </radialGradient>
-    <filter id="tk-glow" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="2.2" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    <filter id="tk-glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="4.4" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.9 0" result="glow"/>
+      <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
     <filter id="tk-shadow" x="-80%" y="-80%" width="260%" height="260%">
-      <feDropShadow dx="0" dy="3" stdDeviation="2.5" flood-color="rgba(0,0,0,0.28)"/>
+      <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="rgba(0,0,0,0.45)"/>
     </filter>
   `;
   svgEl.appendChild(defs);
@@ -343,13 +407,16 @@ function makeToken(color,idx){
   pulse.setAttribute('class','pulse'); pulse.setAttribute('r',r+4);
   pulse.setAttribute('fill','none'); pulse.setAttribute('stroke',fill);
   pulse.setAttribute('stroke-width','2'); pulse.setAttribute('opacity','0');
+
+  pulse.innerHTML='<animate attributeName="r" values="'+(r+4)+';'+(r+10)+';'+(r+4)+'" dur="1.2s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.7;0;0.7" dur="1.2s" repeatCount="indefinite"/>';
   const rim=document.createElementNS(NS,'circle');
   rim.setAttribute('class','rim');
-  rim.setAttribute('r',r+1);
+  rim.setAttribute('r',r+1.3);
   rim.setAttribute('fill','none');
-  rim.setAttribute('stroke','rgba(255,255,255,0.48)');
-  rim.setAttribute('stroke-width','1.2');
-  rim.setAttribute('opacity','0.4');
+  rim.setAttribute('stroke','rgba(255,255,255,0.55)');
+  rim.setAttribute('stroke-width','1.4');
+  rim.setAttribute('opacity','0.45');
+ 
   const body=document.createElementNS(NS,'circle');
   body.setAttribute('class','body');
   body.setAttribute('r',r);
@@ -358,7 +425,7 @@ function makeToken(color,idx){
   hl.setAttribute('rx',r*0.38); hl.setAttribute('ry',r*0.2);
   hl.setAttribute('cx',-r*0.2); hl.setAttribute('cy',-r*0.27);
   hl.setAttribute('class','spec');
-  hl.setAttribute('fill','rgba(255,255,255,0.26)');
+  hl.setAttribute('fill','rgba(255,255,255,0.34)');
   const core=document.createElementNS(NS,'circle');
   core.setAttribute('r',r*0.68);
   core.setAttribute('fill','rgba(255,255,255,0.08)');
