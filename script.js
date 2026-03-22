@@ -55,7 +55,7 @@ const CLR = {
 };
 
 let mySocketId=null, myRoomCode=null, myPlayerId=null, gameState=null, selectedCount=3, animating=false;
-let canvas, ctx, svgEl;
+let boardGridEl, svgEl;
 const tokenEls={}, tokenPos={};
 
 const $  = id => document.getElementById(id);
@@ -181,134 +181,107 @@ socket.on('error',({message})=>toast(message));
 function launchGame(gs) {
   showScreen('screen-game');
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    initCanvas();
-    drawBoard();
+    initBoard();
     initSVGTokens(gs);
     placeTokensStatic(gs);
     renderHUD(gs);
   }));
 }
 
-/* ── Canvas init ─────────────────────────────────────────── */
-function initCanvas() {
+/* ── Board grid init ─────────────────────────────────────── */
+function initBoard() {
   const shell=document.getElementById('board-shell');
-  canvas=$('game-canvas'); svgEl=$('token-svg');
+  const stage=$('board-stage');
+  boardGridEl=$('board-grid'); svgEl=$('token-svg');
 
   const body=document.querySelector('.game-body');
   const br=body.getBoundingClientRect();
-  const availW=br.width-210-18-28;
-  const availH=br.height-28;
+  const panelWidth=window.innerWidth<=820?0:260;
+  const availW=br.width-panelWidth-24-40;
+  const availH=br.height-40;
   const size=Math.floor(Math.min(availW,availH,560,Math.max(availW,260)));
 
   shell.style.width=size+'px'; shell.style.height=size+'px';
-  canvas.width=CANVAS_SIZE; canvas.height=CANVAS_SIZE;
-  canvas.style.width=size+'px'; canvas.style.height=size+'px';
+  stage.style.width=size+'px'; stage.style.height=size+'px';
   svgEl.setAttribute('viewBox','0 0 '+CANVAS_SIZE+' '+CANVAS_SIZE);
   svgEl.style.width=size+'px'; svgEl.style.height=size+'px';
-  ctx=canvas.getContext('2d');
+  buildBoardGrid();
   svgEl.style.pointerEvents='all';
   svgEl.removeEventListener('click',onSVGClick);
   svgEl.addEventListener('click',onSVGClick);
   window.removeEventListener('resize',onResize);
   window.addEventListener('resize',onResize);
-  console.log('[Canvas] shell='+size+'px  CELL='+CELL);
+  console.log('[Board] shell='+size+'px  CELL='+CELL);
 }
 
 function onResize() {
-  if(!canvas||!$('screen-game').classList.contains('active'))return;
-  initCanvas(); drawBoard();
+  if(!$('board-stage')||!$('screen-game').classList.contains('active'))return;
+  initBoard();
   if(gameState){placeTokensStatic(gameState);renderHUD(gameState);}
 }
 
-/* ── Board drawing ───────────────────────────────────────── */
-function drawBoard() {
-  if(!ctx)return;
-  const S=CANVAS_SIZE;
-  ctx.fillStyle='#0d0f1a'; ctx.fillRect(0,0,S,S);
-  ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.lineWidth=0.5;
-  for(let i=0;i<=GRID;i++){
-    ctx.beginPath();ctx.moveTo(i*CELL,0);ctx.lineTo(i*CELL,S);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(0,i*CELL);ctx.lineTo(S,i*CELL);ctx.stroke();
-  }
-  drawZones(); drawPathCells(); drawLaneCells(); drawSafe(); drawCenter(); drawArrows();
-}
+function buildBoardGrid(){
+  if(!boardGridEl) return;
+  boardGridEl.innerHTML='';
 
-function drawZones(){
-  [{col:0,row:0,color:'red'},{col:9,row:0,color:'blue'},{col:9,row:9,color:'green'},{col:0,row:9,color:'yellow'}]
-  .forEach(({col,row,color})=>{
-    const c=CLR[color],x=col*CELL,y=row*CELL,w=6*CELL,p=CELL*0.6;
-    ctx.fillStyle=c.zone; rr(x,y,w,w,CELL*0.35); ctx.fill();
-    ctx.fillStyle='rgba(8,10,22,0.78)'; rr(x+p,y+p,w-p*2,w-p*2,CELL*0.22); ctx.fill();
-    ctx.strokeStyle=c.fill+'55'; ctx.lineWidth=1.5; rr(x+p,y+p,w-p*2,w-p*2,CELL*0.22); ctx.stroke();
-    ctx.save(); ctx.globalAlpha=0.08; ctx.fillStyle='#fff';
-    ctx.font='900 '+(CELL*0.7)+'px Orbitron,monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText(color.toUpperCase(),x+w/2,y+w/2); ctx.restore();
-  });
-}
-
-function drawPathCells(){
-  PATH52.forEach(([c,r])=>{
-    const x=c*CELL+1,y=r*CELL+1,w=CELL-2;
-    ctx.fillStyle='rgba(255,255,255,0.05)'; rr(x,y,w,w,3); ctx.fill();
-    ctx.strokeStyle='rgba(255,255,255,0.09)'; ctx.lineWidth=0.5; rr(x,y,w,w,3); ctx.stroke();
-  });
-}
-
-function drawLaneCells(){
+  const pathColorMap = new Map([[0,'red'],[13,'blue'],[26,'green'],[39,'yellow']]);
+  const coordToPathIndex = new Map(PATH52.map(([c,r],i)=>[`${c},${r}`,i]));
+  const coordToLaneColor = new Map();
   Object.entries(HOME_LANES).forEach(([color,cells])=>{
-    const c=CLR[color];
-    cells.forEach(([col,row])=>{
-      const x=col*CELL+1,y=row*CELL+1,w=CELL-2;
-      ctx.fillStyle=c.lane; rr(x,y,w,w,3); ctx.fill();
-      ctx.strokeStyle=c.fill+'45'; ctx.lineWidth=0.5; rr(x,y,w,w,3); ctx.stroke();
-    });
+    cells.forEach(([c,r])=>coordToLaneColor.set(`${c},${r}`,color));
   });
-}
 
-function drawSafe(){
-  SAFE_SET.forEach(i=>{
-    const [c,r]=PATH52[i]; const x=c*CELL+CELL/2,y=r*CELL+CELL/2;
-    ctx.save(); ctx.fillStyle='rgba(251,191,36,0.2)'; ctx.strokeStyle='rgba(251,191,36,0.5)'; ctx.lineWidth=1;
-    starPath(x,y,CELL*0.27,CELL*0.12,6); ctx.fill(); ctx.stroke(); ctx.restore();
+  for(let row=0; row<GRID; row++){
+    for(let col=0; col<GRID; col++){
+      const cell=document.createElement('div');
+      cell.className='board-cell';
+      cell.style.gridColumn=String(col+1);
+      cell.style.gridRow=String(row+1);
+
+      const key=`${col},${row}`;
+      const pathIdx=coordToPathIndex.get(key);
+      const laneColor=coordToLaneColor.get(key);
+
+      if(pathIdx!==undefined){
+        cell.classList.add('is-path');
+        const pathColor=pathColorMap.get(pathIdx);
+        if(pathColor) cell.classList.add('path-'+pathColor);
+        if(SAFE_SET.has(pathIdx)) cell.classList.add('is-safe');
+      }
+      if(laneColor) cell.classList.add('lane-'+laneColor, 'is-path');
+
+      if(row===7 && col===7){
+        cell.classList.add('center-core');
+      }
+      if((row===6 && col===7) || (row===7 && col===8) || (row===8 && col===7) || (row===7 && col===6)){
+        const centerColor = row===6 ? 'red' : row===7 && col===8 ? 'blue' : row===8 ? 'green' : 'yellow';
+        cell.classList.add('lane-'+centerColor, 'is-path');
+      }
+
+      boardGridEl.appendChild(cell);
+    }
+  }
+
+  [
+    {color:'red',col:1,row:1},
+    {color:'blue',col:10,row:1},
+    {color:'green',col:10,row:10},
+    {color:'yellow',col:1,row:10},
+  ].forEach(({color,col,row})=>{
+    const home=document.createElement('div');
+    home.className=`board-feature home-zone ${color}`;
+    home.style.gridColumn=`${col} / span 5`;
+    home.style.gridRow=`${row} / span 5`;
+    home.innerHTML=`
+      <div class="home-zone__inner">
+        <span class="home-zone__slot"></span>
+        <span class="home-zone__slot"></span>
+        <span class="home-zone__slot"></span>
+        <span class="home-zone__slot"></span>
+      </div>
+    `;
+    boardGridEl.appendChild(home);
   });
-}
-
-function drawCenter(){
-  const cx=CANVAS_SIZE/2,cy=CANVAS_SIZE/2,arm=CELL*2.4;
-  [{color:'red',pts:[[cx,cy],[cx-arm,cy-arm],[cx+arm,cy-arm]]},
-   {color:'blue',pts:[[cx,cy],[cx+arm,cy-arm],[cx+arm,cy+arm]]},
-   {color:'green',pts:[[cx,cy],[cx+arm,cy+arm],[cx-arm,cy+arm]]},
-   {color:'yellow',pts:[[cx,cy],[cx-arm,cy+arm],[cx-arm,cy-arm]]}]
-  .forEach(t=>{
-    ctx.beginPath(); ctx.moveTo(...t.pts[0]); ctx.lineTo(...t.pts[1]); ctx.lineTo(...t.pts[2]); ctx.closePath();
-    ctx.fillStyle=CLR[t.color].fill+'bb'; ctx.fill();
-  });
-  ctx.save(); ctx.fillStyle='rgba(255,255,255,0.92)'; ctx.shadowColor='#fff'; ctx.shadowBlur=12;
-  starPath(cx,cy,CELL*0.5,CELL*0.2,6); ctx.fill(); ctx.restore();
-}
-
-function drawArrows(){
-  [{idx:0,color:'red',angle:0},{idx:13,color:'blue',angle:Math.PI/2},
-   {idx:26,color:'green',angle:Math.PI},{idx:39,color:'yellow',angle:-Math.PI/2}]
-  .forEach(({idx,color,angle})=>{
-    const [c,r]=PATH52[idx]; const x=c*CELL+CELL/2,y=r*CELL+CELL/2,s=CELL*0.16;
-    ctx.save(); ctx.translate(x,y); ctx.rotate(angle); ctx.fillStyle=CLR[color].fill+'cc';
-    ctx.beginPath(); ctx.moveTo(s,0); ctx.lineTo(-s,-s*0.65); ctx.lineTo(-s,s*0.65); ctx.closePath(); ctx.fill(); ctx.restore();
-  });
-}
-
-function rr(x,y,w,h,r){
-  ctx.beginPath(); ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
-  ctx.quadraticCurveTo(x+w,y,x+w,y+r); ctx.lineTo(x+w,y+h-r);
-  ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h); ctx.lineTo(x+r,y+h);
-  ctx.quadraticCurveTo(x,y+h,x,y+h-r); ctx.lineTo(x,y+r);
-  ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
-}
-function starPath(cx,cy,or,ir,n){
-  ctx.beginPath();
-  for(let i=0;i<n*2;i++){const r=i%2===0?or:ir,a=(i*Math.PI/n)-Math.PI/2;
-    i===0?ctx.moveTo(cx+r*Math.cos(a),cy+r*Math.sin(a)):ctx.lineTo(cx+r*Math.cos(a),cy+r*Math.sin(a));}
-  ctx.closePath();
 }
 
 /* ── SVG Tokens ──────────────────────────────────────────── */
@@ -318,7 +291,35 @@ const TOKEN_R=CELL*0.3;
 function initSVGTokens(gs){
   svgEl.innerHTML='';
   const defs=document.createElementNS(NS,'defs');
-  defs.innerHTML='<filter id="tk-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
+  defs.innerHTML=`
+    <radialGradient id="grad-red" cx="35%" cy="30%">
+      <stop offset="0%" stop-color="#fff4f6"/>
+      <stop offset="38%" stop-color="#ef9aa8"/>
+      <stop offset="100%" stop-color="#d65d73"/>
+    </radialGradient>
+    <radialGradient id="grad-blue" cx="35%" cy="30%">
+      <stop offset="0%" stop-color="#f3f7ff"/>
+      <stop offset="38%" stop-color="#97b6eb"/>
+      <stop offset="100%" stop-color="#5f86ce"/>
+    </radialGradient>
+    <radialGradient id="grad-green" cx="35%" cy="30%">
+      <stop offset="0%" stop-color="#f2fbf6"/>
+      <stop offset="38%" stop-color="#8cc9ac"/>
+      <stop offset="100%" stop-color="#4aa076"/>
+    </radialGradient>
+    <radialGradient id="grad-yellow" cx="35%" cy="30%">
+      <stop offset="0%" stop-color="#fffdf1"/>
+      <stop offset="38%" stop-color="#ead894"/>
+      <stop offset="100%" stop-color="#d2b44e"/>
+    </radialGradient>
+    <filter id="tk-glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="2.2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="tk-shadow" x="-80%" y="-80%" width="260%" height="260%">
+      <feDropShadow dx="0" dy="3" stdDeviation="2.5" flood-color="rgba(0,0,0,0.28)"/>
+    </filter>
+  `;
   svgEl.appendChild(defs);
   gs.players.forEach(p=>{
     tokenEls[p.color]=[]; tokenPos[p.color]=[];
@@ -336,24 +337,38 @@ function makeToken(color,idx){
   g.setAttribute('class','token-group'); g.dataset.color=color; g.dataset.idx=idx;
   const r=TOKEN_R, fill=CLR[color].fill;
   const sh=document.createElementNS(NS,'circle');
-  sh.setAttribute('r',r+2); sh.setAttribute('fill','rgba(0,0,0,0.4)'); sh.setAttribute('transform','translate(2,3)');
+  sh.setAttribute('r',r+3); sh.setAttribute('fill','rgba(3,6,15,0.42)'); sh.setAttribute('transform','translate(2,4)');
+  sh.setAttribute('filter','url(#tk-shadow)');
   const pulse=document.createElementNS(NS,'circle');
-  pulse.setAttribute('class','pulse'); pulse.setAttribute('r',r+5);
+  pulse.setAttribute('class','pulse'); pulse.setAttribute('r',r+4);
   pulse.setAttribute('fill','none'); pulse.setAttribute('stroke',fill);
   pulse.setAttribute('stroke-width','2'); pulse.setAttribute('opacity','0');
-  pulse.innerHTML='<animate attributeName="r" values="'+(r+4)+';'+(r+10)+';'+(r+4)+'" dur="1.2s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.7;0;0.7" dur="1.2s" repeatCount="indefinite"/>';
+  const rim=document.createElementNS(NS,'circle');
+  rim.setAttribute('class','rim');
+  rim.setAttribute('r',r+1);
+  rim.setAttribute('fill','none');
+  rim.setAttribute('stroke','rgba(255,255,255,0.48)');
+  rim.setAttribute('stroke-width','1.2');
+  rim.setAttribute('opacity','0.4');
   const body=document.createElementNS(NS,'circle');
-  body.setAttribute('class','body'); body.setAttribute('r',r); body.setAttribute('fill',fill);
+  body.setAttribute('class','body');
+  body.setAttribute('r',r);
+  body.setAttribute('fill','url(#grad-'+color+')');
   const hl=document.createElementNS(NS,'ellipse');
   hl.setAttribute('rx',r*0.38); hl.setAttribute('ry',r*0.2);
   hl.setAttribute('cx',-r*0.2); hl.setAttribute('cy',-r*0.27);
-  hl.setAttribute('fill','rgba(255,255,255,0.28)');
+  hl.setAttribute('class','spec');
+  hl.setAttribute('fill','rgba(255,255,255,0.26)');
+  const core=document.createElementNS(NS,'circle');
+  core.setAttribute('r',r*0.68);
+  core.setAttribute('fill','rgba(255,255,255,0.08)');
   const txt=document.createElementNS(NS,'text');
   txt.setAttribute('text-anchor','middle'); txt.setAttribute('dominant-baseline','central');
   txt.setAttribute('fill','#fff'); txt.setAttribute('font-size',r*0.85);
   txt.setAttribute('font-family','Outfit,sans-serif'); txt.setAttribute('font-weight','700');
+  txt.setAttribute('style','paint-order:stroke;stroke:rgba(0,0,0,0.2);stroke-width:1px');
   txt.setAttribute('pointer-events','none'); txt.textContent=idx+1;
-  g.append(sh,pulse,body,hl,txt);
+  g.append(sh,pulse,rim,body,core,hl,txt);
   return g;
 }
 
@@ -473,6 +488,7 @@ function renderHUD(gs){
     $('tc-orb').style.background=CLR[cp.color].fill;
     $('tc-orb').style.boxShadow='0 0 18px '+CLR[cp.color].glow;
     $('tc-badge').classList.toggle('show',cp.id===myPlayerId);
+    $('turn-card').classList.toggle('active-turn',cp.id===myPlayerId);
   }
   // Disable roll button during: not my turn, not roll phase, animating, or animating phase from server
   const canRoll = gs.currentPlayer===myPlayerId
